@@ -1,4 +1,4 @@
-const socket = new WebSocket('/ws/dashboard');
+const socket = new WebSocket('/dashboard/ws');
 
 socket.addEventListener("open", e => {
   socket.send("Hello Server!");
