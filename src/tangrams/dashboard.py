@@ -1,8 +1,8 @@
 from fastapi import WebSocket, APIRouter
 
-router = APIRouter()
+dashboard_router = APIRouter()
 
-@router.websocket("/ws")
+@dashboard_router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     
