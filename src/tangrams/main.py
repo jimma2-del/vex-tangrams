@@ -26,7 +26,7 @@ server_loop = asyncio.new_event_loop()
 
 def run_server():
     asyncio.set_event_loop(server_loop)
-    server = uvicorn.Server(uvicorn.Config(app, port=8000))
+    server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=8000))
     server_loop.run_until_complete(server.serve())
 
 threading.Thread(target=run_server, daemon=True).start()
