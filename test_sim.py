@@ -17,7 +17,8 @@ reset = jax.jit(env.reset)
 step = jax.jit(env.step)
 render = jax.jit(env.render)
 
-FPS = round(1 / env.settings.sim_dt)
+SPEED_MULTIPLIER = 4 # play the sim faster or slower than real time
+FPS = round(1 / env.settings.ctrl_dt * SPEED_MULTIPLIER)
 clock = pygame.time.Clock()
 
 pygame.display.set_caption("Tangrams Sim")
