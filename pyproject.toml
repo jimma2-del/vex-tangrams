@@ -10,7 +10,9 @@ dependencies = [
     "fastapi[standard]==0.141.1",
     "websockets==17.1",
     "opencv-python==5.0.0.93",
-    "pupil_apriltags==1.0.4.post11"
+    "pupil_apriltags==1.0.4.post11",
+    "jax==0.11.2",
+    "pygame==2.6.1"
 ]
 authors = [
   {name = "Jim Ma", email = "jim.majk350@gmail.com"}
