@@ -25,7 +25,7 @@ pygame.display.set_caption("Tangrams Sim")
 screen = pygame.display.set_mode(env.render_size)
 
 state = reset()
-collided = False
+failed = False
 
 shape_i = 0
 NUM_KEYS = { pygame.K_1 + i: i + 1 for i in range(7) }  # K_1..K_7 -> 1..7
@@ -62,9 +62,9 @@ while True:
 
     action = Action(target_vel=target_vel, target_ang_vel=target_ang_vel)
 
-    if not collided:
-        state, collided = step(state, action)
-        if collided: print("COLLISION")
+    if not failed:
+        state, failed = step(state, action)
+        if failed: print("FAILED")
 
     #print(state.)
 

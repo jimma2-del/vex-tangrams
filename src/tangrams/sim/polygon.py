@@ -18,22 +18,29 @@ class Polygon:
     
     n_vertices: np.ndarray
 
-def get_polygon_edges(polygon: Polygon, ang: ArrayLike=0, pos: ArrayLike=jnp.zeros(2)) -> jax.Array:
-    """Creates a list of edge startpoints and a list of edge endpoints for the given vertices.
-    Rotates the polygon vertices about (0, 0) and translates by `polygon_pos`.
-
-    Returns: 
-        start, end as a single JAX array of shape (2, n_vertices, n_dims=2)
-    """
+def transform_vertices(polygon: Polygon, ang: ArrayLike=0, pos: ArrayLike=jnp.zeros(2)) -> jax.Array:
+    """Rotates the polygon vertices by `ang` about (0, 0) and translates by `pos`."""
     
-    start_vertices = polygon.vertices
+    vertices = polygon.vertices
 
     # rotate vertices
-    start_vertices = rotation_matrix_2d(ang) @ start_vertices.T
-    start_vertices = start_vertices.T # transform back to shape (n_vertices, n_dims=2)
+    vertices = rotation_matrix_2d(ang) @ vertices.T
+    vertices = vertices.T # transform back to shape (n_vertices, n_dims=2)
 
     # translate vertices
-    start_vertices += pos
+    vertices += pos
+
+    return vertices
+
+def polygon_out_of_bounds(pos: ArrayLike, ang: ArrayLike, polygon: Polygon, bounds: ArrayLike) -> jax.Array:
+    vertices = transform_vertices(polygon, ang, pos) # (n_vertices, n_dims=2)
+    return jnp.any((vertices < bounds[0]) | (vertices > bounds[1]), axis=(-2, -1))
+
+def get_polygon_edges(polygon: Polygon, ang: ArrayLike=0, pos: ArrayLike=jnp.zeros(2)) -> jax.Array:
+    """Creates a list of edge startpoints and a list of edge endpoints for the given vertices.
+    Returns: start, end as a single JAX array of shape (2, n_vertices, n_dims=2)"""
+    
+    start_vertices = transform_vertices(polygon, ang, pos)
 
     # end vertex is the PREVIOUS vertex to allow extra padding edges to be easily masked out
     end_vertices = jnp.roll(start_vertices, 1, axis=0)
@@ -41,7 +48,23 @@ def get_polygon_edges(polygon: Polygon, ang: ArrayLike=0, pos: ArrayLike=jnp.zer
     return jnp.stack((start_vertices, end_vertices))
 
 def convex_polygon_intersect(polygon_edges1: jax.Array, polygon_edges2: jax.Array) -> jax.Array:
-    pass
+    start1, end1 = polygon_edges1 # (N, n_dims=2)
+    start2, end2 = polygon_edges2 # (M, n_dims=2)
+
+    # get axes to test: the normal of every edge of both polygons
+    edges = jnp.concatenate((end1 - start1, end2 - start2)) # (N+M, 2)
+    axes = jnp.stack((-edges[:, 1], edges[:, 0]), axis=-1) # (N+M, 2)
+        # perpendicular: -y, x
+
+    # project each polygon's vertices onto every axis
+    p1 = start1 @ axes.T # (N, N+M)
+    p2 = start2 @ axes.T # (M, N+M)
+
+    # an axis separates the polygons if their projected intervals don't overlap
+    separated = (jnp.max(p1, axis=0) < jnp.min(p2, axis=0)) | (jnp.max(p2, axis=0) < jnp.min(p1, axis=0))
+
+    # intersect only if no separating axis exists
+    return ~separated.any()
 
 def point_in_convex_polygon(point: ArrayLike, polygon_edges: jax.Array) -> jax.Array:
     start_vertices, end_vertices = polygon_edges
@@ -55,7 +78,7 @@ def point_in_convex_polygon(point: ArrayLike, polygon_edges: jax.Array) -> jax.A
     # if point is on the same side of every line, it is inside the convex polygon
     return jnp.all(cross_prod >= 0) | jnp.all(cross_prod <= 0) # all to the left or all to the right
 
-def get_bbox_len(polygon: Polygon, scale: float = 1) -> int:
+def get_polygon_bbox_len(polygon: Polygon, scale: float = 1) -> int:
     """Find the minimum static rectangular bounding box size to fit any dynamic rotaton.
     
     As the polygon rotates, it sweeps out a circle around the center (0, 0) 
@@ -81,7 +104,7 @@ def fill_convex_polygon(
     """
 
     if bb_len is None:
-        bb_len = get_bbox_len(polygon, scale)
+        bb_len = get_polygon_bbox_len(polygon, scale)
 
     # create grid of points inside rect bounding box, centered around (0, 0)
     points = jnp.mgrid[:bb_len, :bb_len] - bb_len//2 # shape (n_dims, bb_len, bb_len)
@@ -104,13 +127,3 @@ def fill_convex_polygon(
 
     # apply rectanglar section with polygon back onto the original image
     return jax.lax.dynamic_update_slice(image, new_patch, patch_start_is)
-
-def closest_point_on_line(point, line):
-    '''Returns the closest point on the line from the given point.
-    Treats lines as infinite; does not clip to between endpoints.'''
-    
-    line_p1, line_p2, *_ = line
-    line_dir = line_p2 - line_p1
-
-    return jnp.dot(line_dir, point - line_p1) / jnp.dot(line_dir, line_dir) * line_dir \
-        + line_p1 # project vector from p1 to point onto line dir; add to p1

@@ -5,8 +5,10 @@ from dataclasses import field
 
 import jax.numpy as jnp
 import jax
+from jax.typing import ArrayLike
 
-from .utils import Polygon, convex_polygon_intersect, fill_convex_polygon, get_bbox_len
+from .polygon import Polygon, polygon_out_of_bounds, get_polygon_edges, convex_polygon_intersect, \
+    fill_convex_polygon, get_polygon_bbox_len
 
 # UNITS: shapes assemble into square of length 4
 
@@ -94,13 +96,13 @@ class Sim:
 
         return State(
             pos = jnp.array(( 
-                (5/3, -1), # small triangle 1 (bottom-right corner)
+                (5/3 + 0.1, -1), # small triangle 1 (bottom-right corner)
                 (0, 2/3), # small triangle 2 (above center)
-                (4/3, 4/3), # medium triangle (top-right corner)
-                (-4/3, 0), # large triangle 1 (left)
-                (0, -4/3), # large triangle 2 (bottom)
-                (1, 0), # square (right of center)
-                (-0.5, 1.5), # parallelogram (top)
+                (4/3 + 0.1, 4/3 + 0.1), # medium triangle (top-right corner)
+                (-4/3 - 0.1, 0), # large triangle 1 (left)
+                (0, -4/3 - 0.1), # large triangle 2 (bottom)
+                (1 + 0.05, 0), # square (right of center)
+                (-0.5, 1.5 + 0.05), # parallelogram (top)
             )),
             vel = jnp.zeros((7, 2)),
             ang = jnp.array((
@@ -116,26 +118,48 @@ class Sim:
         )
 
     def step(self, state: State, action: Action) -> tuple[State, jax.Array]:
-        # check for collisions
-        collided = False
+        # check for collisions and out of bounds
+        failed = self.check_failed(state)
         
-        # only update state if no collision
-        return jax.lax.cond(collided, 
+        # only update state if not failed
+        return jax.lax.cond(failed, 
             lambda: state, 
-            lambda: self._update_state(state, action)
-        ), collided
+            lambda: self.update_state(state, action)
+        ), failed
 
-    def _update_state(self, state: State, action: Action) -> State:
+    def check_failed(self, state: State) -> jax.Array:
+        return self.check_out_of_bounds(state) | self.check_collided(state)
+
+    def check_out_of_bounds(self, state: State) -> jax.Array:
+        vmapped_out_of_bounds = jax.vmap(polygon_out_of_bounds, in_axes=(0, 0, 0, None))
+        return jnp.any(vmapped_out_of_bounds(state.pos, state.ang, self.SHAPES, self.settings.bounds))
+
+    def check_collided(self, state: State) -> jax.Array:
+        shape_edges = jax.vmap(get_polygon_edges)(self.SHAPES, state.ang, state.pos)
+
+        get_colls = jax.vmap(jax.vmap(convex_polygon_intersect, in_axes=(None, 0)), in_axes=(0, None))
+        coll_matrix = get_colls(shape_edges, shape_edges)
+
+        # mask out self-intersections
+        coll_matrix *= 1 - np.eye(coll_matrix.shape[0])
+
+        # coll_cols = jnp.argmax(coll_matrix, axis=1)
+        # first_col_row = jnp.argmax(jnp.sum(coll_matrix, axis=1) > 0)
+        # jax.debug.print("COLL {i}, {j}", i=first_col_row, j=coll_cols[first_col_row])
+
+        return jnp.any(coll_matrix)
+
+    def update_state(self, state: State, action: Action) -> State:
         sim_steps_per_ctrl = int(self.settings.ctrl_dt / self.settings.sim_dt)
 
         def scan_func(state, _):
-            return self._sim_step(state, action), None
+            return self.sim_step(state, action), None
         state, _ = jax.lax.scan(scan_func, state, None, length=sim_steps_per_ctrl, 
             unroll=True) # use unrolling since sim steps are simple and low in number?
 
         return state     
 
-    def _sim_step(self, state: State, action: Action) -> State:
+    def sim_step(self, state: State, action: Action) -> State:
         ### update velocities first, then positions (semi-implicit Euler method) ###
 
         # update velocities based on actions
@@ -176,7 +200,7 @@ class Sim:
     def render(self, state: State, action: Action | None = None) -> chex.Array:
         # need to add padding of maximum bbox len / 2 to ensure proper rendering
             # since the entire bbox must be within the image
-        pad_amt = np.max(get_bbox_len(self.SHAPES, self.render_settings.scale)) // 2
+        pad_amt = np.max(get_polygon_bbox_len(self.SHAPES, self.render_settings.scale)) // 2
 
         image_shape = (*(self.render_size + 2*pad_amt), 3)
         image = jnp.full(image_shape, self.render_settings.background_color, dtype=jnp.uint8)
