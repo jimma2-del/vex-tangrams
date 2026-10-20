@@ -48,7 +48,7 @@ WHEEL_DIRS =  np.array([
     [1/2, np.sqrt(3)/2]
 ]) # shape (n_wheels=3, n_dims=2)
 
-WHEEL_DISTS = np.array((4, -7, 7))
+WHEEL_DISTS = np.array((5, -7, -7))
   # dist from center; positive if facing CCW, negative if facing CW
 
 WHEEL_SPEEDS_MATRIX = np.hstack((WHEEL_DIRS, WHEEL_DISTS[:, None]))
