@@ -1,0 +1,14 @@
+h1 {
+    color: #ff0000;
+    text-align: center;
+}
+body {
+  background-color: lightblue;
+}
+canvas{
+    border: 3px solid darkgreen;
+    background-color: whitesmoke;
+    margin: 0 auto;
+    border-style:groove;
+    display: block;
+}
